@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Algorithm</title>
+    <!-- Private page to trigger your processing algorithm on uploaded files -->
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+    <div class="container">
+      <!-- Simple top navigation -->
+      <div class="topbar" style="margin-bottom:1rem;">
+          <div class="row" style="align-items:center;">
+              <h2 style="margin:0;">Algorithm</h2>
+              <a href="/upload">Upload</a>
+              <a href="/profile">Profile</a>
+          </div>
+          <div class="row" style="align-items:center;">
+              <span id="profile-username"></span>
+              <button class="outline" onclick="logout()">Logout</button>
+          </div>
+      </div>
+
+    <!-- Controls to run a (demo) algorithm. Replace with real options later. -->
+    <div class="section">
+        <h3>Run algorithm on your uploaded files</h3>
+        <div class="row" style="align-items:center; gap:0.5rem; flex-wrap:wrap;">
+            <label for="algo-select">Algorithm:</label>
+            <select id="algo-select">
+                <option value="demo">Demo</option>
+            </select>
+            <button id="run-btn">Run</button>
+        </div>
+        <div id="algo-output" class="row"></div>
+    </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+    <script>
+        // Validate token and possibly redirect
+        if (typeof checkAuth === 'function') {
+            checkAuth();
+        }
+        if (typeof showUsernameInNav === 'function') {
+            showUsernameInNav();
+        }
+        // Demo run handler (placeholder). Replace with real backend call.
+        document.getElementById('run-btn').addEventListener('click', async () => {
+            document.getElementById('algo-output').textContent = 'Algorithm executed (demo). Hook your backend here.';
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Media Upload</title>
+    <!-- This is the auth page (login/register). The real app UI is on /upload. -->
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+    <div class="center">
+      <div class="card" style="width:100%;max-width:560px;">
+        <div class="card-header">
+          <h1 class="card-title">Lecture Analytics</h1>
+          <p class="card-desc">Sign in or create an account to analyze engagement</p>
+        </div>
+        <div class="card-content">
+          <!-- Tabs let you switch between Login and Register forms. -->
+          <div class="tabs">
+              <div id="login-tab" class="tab active" onclick="showForm('login')">Login</div>
+              <div id="register-tab" class="tab" onclick="showForm('register')">Register</div>
+          </div>
+          <!-- Login form. The login() function is defined in this file below. -->
+          <div id="login-form" class="stack">
+              <input type="text" id="login-username" placeholder="Username">
+              <input type="password" id="login-password" placeholder="Password">
+              <button onclick="login()">Login</button>
+              <p id="login-error" class="muted" style="color: red;"></p>
+          </div>
+  
+          <!-- Register form. The register() function is defined in this file below. -->
+          <div id="register-form" class="stack hidden">
+              <input type="text" id="reg-username" placeholder="Username">
+              <input type="password" id="reg-password" placeholder="Password">
+              <button onclick="register()">Register</button>
+              <p id="reg-error" class="muted" style="color: red;"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Upload UI lives on /upload. We load script.js to manage auth and redirects. -->
+    <script src="/static/script.js"></script>
+    <script>
+        // Use checkAuth() from script.js to redirect logged-in users to /upload
+        if (typeof checkAuth === 'function') {
+            checkAuth();
+        }
+
+        // Simple showForm() helper to toggle between Login and Register forms
+        function showForm(type) {
+            const loginTab = document.getElementById('login-tab');
+            const registerTab = document.getElementById('register-tab');
+            loginTab.classList.remove('active');
+            registerTab.classList.remove('active');
+            if (type === 'login') {
+                loginTab.classList.add('active');
+            } else {
+                registerTab.classList.add('active');
+            }
+            document.getElementById('login-form').classList.toggle('hidden', type !== 'login');
+            document.getElementById('register-form').classList.toggle('hidden', type !== 'register');
+        }
+
+        // Simple register() helper that calls /auth/register
+        async function register() {
+            localStorage.removeItem('token'); // ← добавь эту строку
+
+            const username = document.getElementById('reg-username').value;
+            const password = document.getElementById('reg-password').value;
+            const errorEl = document.getElementById('reg-error');
+
+            try {
+                const res = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    // Успешная регистрация: убираем сообщение и переходим на страницу входа
+                    errorEl.textContent = '';
+                    showForm('login');
+                    window.location.replace('/auth');
+                } else {
+                    errorEl.textContent = data.detail || 'Registration failed';
+                }
+            } catch (e) {
+                errorEl.textContent = 'Connection error';
+            }
+        }
+
+        // Simple login() helper that calls /auth/token
+        async function login() {
+            // Очистка предыдущего токена
+            localStorage.removeItem('token');
+
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            const errorEl = document.getElementById('login-error');
+
+            try {
+                const res = await fetch('/auth/token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ username, password })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    localStorage.setItem('token', data.access_token);
+                    errorEl.textContent = '';
+                    // Явно переходим на страницу загрузки после входа
+                    window.location.replace('/upload');
+                } else {
+                    errorEl.textContent = data.detail || 'Invalid credentials';
+                }
+            } catch (e) {
+                errorEl.textContent = 'Connection error';
+            }
+        }
+
+        // upload is implemented in /static/script.js
+
+        // Local logout for the auth page (clears token and resets forms)
+        function logout() {
+            localStorage.removeItem('token');
+            document.querySelector('.tabs').classList.remove('hidden');
+            document.getElementById('login-form').classList.remove('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+            document.getElementById('upload-section').classList.add('hidden');
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelector('.tab:first-child').classList.add('active');
+        }
+    </script>
+  </body>
+</html>
