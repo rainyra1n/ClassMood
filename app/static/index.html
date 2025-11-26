@@ -9,28 +9,28 @@
     <div class="center">
       <div class="card" style="width:100%;max-width:560px;">
         <div class="card-header">
-          <h1 class="card-title">Lecture Analytics</h1>
-          <p class="card-desc">Sign in or create an account to analyze engagement</p>
+          <h1 class="card-title">Анализ заинтересованности студентов</h1>
+          <p class="card-desc">Войдите или зарегистрируйтесь, чтобы анализировать свои лекции</p>
         </div>
         <div class="card-content">
           <!-- Tabs let you switch between Login and Register forms. -->
           <div class="tabs">
-              <div id="login-tab" class="tab active" onclick="showForm('login')">Login</div>
-              <div id="register-tab" class="tab" onclick="showForm('register')">Register</div>
+              <div id="login-tab" class="tab active" onclick="showForm('login')">Вход</div>
+              <div id="register-tab" class="tab" onclick="showForm('register')">Регистрация</div>
           </div>
           <!-- Login form. The login() function is defined in this file below. -->
           <div id="login-form" class="stack">
-              <input type="text" id="login-username" placeholder="Username">
-              <input type="password" id="login-password" placeholder="Password">
-              <button onclick="login()">Login</button>
+              <input type="text" id="login-username" placeholder="Имя пользователя">
+              <input type="password" id="login-password" placeholder="Пароль">
+              <button onclick="login()">Войти</button>
               <p id="login-error" class="muted" style="color: red;"></p>
           </div>
   
           <!-- Register form. The register() function is defined in this file below. -->
           <div id="register-form" class="stack hidden">
-              <input type="text" id="reg-username" placeholder="Username">
-              <input type="password" id="reg-password" placeholder="Password">
-              <button onclick="register()">Register</button>
+              <input type="text" id="reg-username" placeholder="Имя пользователя">
+              <input type="password" id="reg-password" placeholder="Пароль">
+              <button onclick="register()">Регистрация</button>
               <p id="reg-error" class="muted" style="color: red;"></p>
           </div>
         </div>

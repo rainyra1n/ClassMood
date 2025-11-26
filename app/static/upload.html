@@ -2,8 +2,9 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>Upload</title>
+    <title>Загрузка файлов</title>
     <!-- Private page: requires a token. Redirect early if missing. -->
+
     <link rel="stylesheet" href="/static/style.css" />
     <script>
         // Early guard: if no token, redirect immediately before rendering
@@ -18,31 +19,30 @@
       <!-- Simple navigation/header with links to other private pages. -->
       <div class="topbar" style="margin-bottom:1rem;">
           <div class="row" style="align-items:center;">
-              <h2 style="margin:0;">Upload Files</h2>
-              <a href="/profile">Profile</a>
+            <h2 style="margin:0;">Загрузка файлов</h2>
+            <a href="/profile">Профиль</a>
+            <a href="/algorithm">Анализ видео</a>
           </div>
           <div class="row" style="align-items:center;">
               <span id="profile-username"></span>
-              <button class="outline" onclick="logout()">Logout</button>
+              <button class="outline" onclick="logout()">Выйти</button>
           </div>
       </div>
 
     <!-- Upload section: choose files and send to the backend. -->
     <div id="upload-section" class="section stack">
         <div class="row" style="align-items:center;">
-            <input type="file" id="fileInput" multiple />
-            <button onclick="upload()">Upload</button>
+            <input type="file" accept="video/*" id="fileInput" multiple />
+            <button onclick="upload()">Загрузить</button>
         </div>
 
         <!-- Your file list loads dynamically via loadUserFiles() in script.js -->
-        <h3>Your Files</h3>
+        <h3>Ваши файлы</h3>
         <div id="user-files"></div>
         <div id="results" class="muted"></div>
 
         <!-- Analysis chart for selected file -->
-        <h3>Engagement Over Time</h3>
-        <div id="chart-error" style="color:red; min-height: 1.2em;"></div>
-        <canvas id="engagement-chart" class="framed" width="800" height="260"></canvas>
+
     </div>
 
     </div>

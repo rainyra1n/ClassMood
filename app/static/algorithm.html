@@ -2,52 +2,405 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>Algorithm</title>
-    <!-- Private page to trigger your processing algorithm on uploaded files -->
+    <title>Анализ видео</title>
     <link rel="stylesheet" href="/static/style.css" />
+    <script>
+        try {
+            const t = localStorage.getItem('token');
+            if (!t) window.location.replace('/auth');
+        } catch {}
+    </script>
 </head>
 <body>
     <div class="container">
-      <!-- Simple top navigation -->
       <div class="topbar" style="margin-bottom:1rem;">
           <div class="row" style="align-items:center;">
-              <h2 style="margin:0;">Algorithm</h2>
-              <a href="/upload">Upload</a>
-              <a href="/profile">Profile</a>
+              <h2 style="margin:0;">Анализ видео</h2>
+              <a href="/upload">Загрузка файлов</a>
+              <a href="/profile">Профиль</a>
           </div>
           <div class="row" style="align-items:center;">
               <span id="profile-username"></span>
-              <button class="outline" onclick="logout()">Logout</button>
+              <button class="outline" onclick="logout()">Выйти</button>
           </div>
       </div>
 
-    <!-- Controls to run a (demo) algorithm. Replace with real options later. -->
-    <div class="section">
-        <h3>Run algorithm on your uploaded files</h3>
-        <div class="row" style="align-items:center; gap:0.5rem; flex-wrap:wrap;">
-            <label for="algo-select">Algorithm:</label>
-            <select id="algo-select">
-                <option value="demo">Demo</option>
-            </select>
-            <button id="run-btn">Run</button>
+      <div class="section">
+        <h3>Выберите файлы для анализа</h3>
+        <div class="stack">
+            <div id="file-list">
+                <p>Загрузка ваших файлов...</p>
+            </div>
+
+            <div id="selected-files" class="hidden">
+                <h4>Выбранные файлы:</h4>
+                <div class="row" style="gap: 1rem; flex-wrap: wrap;">
+                    <div id="file1-slot" class="file-slot" style="flex: 1; min-width: 200px;">
+                        <div class="file-slot-content" style="padding: 1rem; border: 2px dashed #ddd; border-radius: 8px; text-align: center;">
+                            <span class="muted">Выберите файл нажав на него</span>
+                        </div>
+                    </div>
+                    <div id="file2-slot" class="file-slot" style="flex: 1; min-width: 200px;">
+                        <div class="file-slot-content" style="padding: 1rem; border: 2px dashed #ddd; border-radius: 8px; text-align: center;">
+                            <span class="muted">Выберите файл нажав на него</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="analysis-controls" class="hidden">
+                <div class="row" style="gap: 0.5rem; flex-wrap: wrap;">
+                    <button onclick="runSingleAnalysis()">Анализировать один файл</button>
+                    <button onclick="runComparison()" style="background: #3aa5db;">Сравнить файлы</button>
+                    <button class="outline" onclick="clearSelection()">Очистить выбор</button>
+                </div>
+            </div>
         </div>
-        <div id="algo-output" class="row"></div>
-    </div>
+
+        <div id="chart-section" class="hidden">
+            <h3 id="chart-title">Результаты анализа</h3>
+            <div id="chart-error" style="color:red; min-height: 1.2em;"></div>
+            <canvas id="engagement-chart" class="framed" width="800" height="300"></canvas>
+
+            <div id="analysis-stats" style="margin-top: 1rem;">
+                <h4>Статистика</h4>
+                <div id="stats-content"></div>
+            </div>
+        </div>
+      </div>
     </div>
 
     <script src="/static/script.js"></script>
     <script>
-        // Validate token and possibly redirect
-        if (typeof checkAuth === 'function') {
-            checkAuth();
+        let selectedFiles = {
+            file1: null,
+            file2: null
+        };
+
+        if (typeof checkAuth === 'function') checkAuth();
+        if (typeof showUsernameInNav === 'function') showUsernameInNav();
+
+        // Load user files on page load
+        document.addEventListener('DOMContentLoaded', loadAlgorithmFiles);
+
+        async function loadAlgorithmFiles() {
+            const token = localStorage.getItem('token');
+            const res = await fetch('/media/files', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            const filesEl = document.getElementById('file-list');
+
+            if (res.ok && data.files.length > 0) {
+                filesEl.innerHTML = `
+                    <p>Нажмите на файлы для выбора (выберите 1 для одиночного анализа, 2 для сравнения):</p>
+                    <div class="stack" style="max-height: 300px; overflow-y: auto;">
+                        ${data.files.map(f => `
+                            <div class="file-item"
+                                 style="padding: 0.75rem; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; margin: 0.25rem 16px;background-color: #f5f5f5;"
+                                 onclick="selectFile(${f.id}, '${f.filename.replace(/'/g, "\\'")}', this)"
+                                 data-file-id="${f.id}">
+                                <div style="font-weight: 500;">${f.filename}</div>
+                                <small class="muted">Загружено: ${new Date(f.uploaded_at).toLocaleString()}</small>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else {
+                filesEl.innerHTML = '<p>Нет доступных файлов. <a href="/upload">Сначала загрузите файлы</a>.</p>';
+            }
         }
-        if (typeof showUsernameInNav === 'function') {
-            showUsernameInNav();
+
+        function selectFile(fileId, filename, element) {
+            // Remove selection from all files first
+            document.querySelectorAll('.file-item').forEach(item => {
+                item.style.background = '';
+                item.style.borderColor = '#ddd';
+            });
+
+            // If this file is already selected, deselect it
+            if (selectedFiles.file1 === fileId) {
+                selectedFiles.file1 = null;
+                updateFileSlots();
+                return;
+            }
+            if (selectedFiles.file2 === fileId) {
+                selectedFiles.file2 = null;
+                updateFileSlots();
+                return;
+            }
+
+            // Select in first available slot
+            if (selectedFiles.file1 === null) {
+                selectedFiles.file1 = fileId;
+                element.style.background = '#f0f8ff';
+                element.style.borderColor = '#3aa5db';
+            } else if (selectedFiles.file2 === null) {
+                selectedFiles.file2 = fileId;
+                element.style.background = '#fff0f0';
+                element.style.borderColor = '#e33';
+            } else {
+                // If both slots are full, replace the second one
+                selectedFiles.file2 = fileId;
+
+                // Update visual selection
+                document.querySelectorAll('.file-item').forEach(item => {
+                    const itemFileId = parseInt(item.getAttribute('data-file-id'));
+                    if (itemFileId === selectedFiles.file1) {
+                        item.style.background = '#f0f8ff';
+                        item.style.borderColor = '#3aa5db';
+                    } else if (itemFileId === selectedFiles.file2) {
+                        item.style.background = '#fff0f0';
+                        item.style.borderColor = '#e33';
+                    } else {
+                        item.style.background = '';
+                        item.style.borderColor = '#ddd';
+                    }
+                });
+            }
+
+            updateFileSlots();
         }
-        // Demo run handler (placeholder). Replace with real backend call.
-        document.getElementById('run-btn').addEventListener('click', async () => {
-            document.getElementById('algo-output').textContent = 'Algorithm executed (demo). Hook your backend here.';
-        });
+
+        function updateFileSlots() {
+            const selectedFilesDiv = document.getElementById('selected-files');
+            const controlsDiv = document.getElementById('analysis-controls');
+
+            // Update file slots
+            updateFileSlot('file1', selectedFiles.file1, '#f0f8ff', '#3aa5db');
+            updateFileSlot('file2', selectedFiles.file2, '#fff0f0', '#e33');
+
+            // Show/hide controls
+            if (selectedFiles.file1 !== null || selectedFiles.file2 !== null) {
+                selectedFilesDiv.classList.remove('hidden');
+                controlsDiv.classList.remove('hidden');
+            } else {
+                selectedFilesDiv.classList.add('hidden');
+                controlsDiv.classList.add('hidden');
+                document.getElementById('chart-section').classList.add('hidden');
+            }
+        }
+
+        function updateFileSlot(slotName, fileId, bgColor, borderColor) {
+            const slot = document.querySelector(`#${slotName}-slot .file-slot-content`);
+            if (fileId === null) {
+                slot.innerHTML = '<span class="muted">Нажмите на файл для выбора</span>';
+                slot.style.borderColor = '#ddd';
+                slot.style.background = '';
+            } else {
+                // Find filename
+                const fileItem = document.querySelector(`.file-item[data-file-id="${fileId}"]`);
+                const filename = fileItem ? fileItem.querySelector('div').textContent : `File ${fileId}`;
+                slot.innerHTML = `
+                    <div style="font-weight: 500; margin-bottom: 0.5rem;">${filename}</div>
+                    <button class="outline" onclick="deselectFile('${slotName}')" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Удалить</button>
+                `;
+                slot.style.borderColor = borderColor;
+                slot.style.background = bgColor;
+            }
+        }
+
+        function deselectFile(slotName) {
+            const fileId = selectedFiles[slotName];
+            selectedFiles[slotName] = null;
+
+            // Update visual selection
+            if (fileId) {
+                const fileElement = document.querySelector(`.file-item[data-file-id="${fileId}"]`);
+                if (fileElement) {
+                    fileElement.style.background = '';
+                    fileElement.style.borderColor = '#ddd';
+                }
+            }
+
+            updateFileSlots();
+        }
+
+        function clearSelection() {
+            selectedFiles.file1 = null;
+            selectedFiles.file2 = null;
+
+            document.querySelectorAll('.file-item').forEach(item => {
+                item.style.background = '';
+                item.style.borderColor = '#ddd';
+            });
+
+            updateFileSlots();
+        }
+
+        async function runSingleAnalysis() {
+            const fileId = selectedFiles.file1 || selectedFiles.file2;
+            if (!fileId) {
+                    alert('Please select at least one file for analysis');
+                    return;
+            }
+            await runAnalysis(fileId, 'single');
+        }
+
+        async function runComparison() {
+            if (!selectedFiles.file1 || !selectedFiles.file2) {
+                alert('Please select two files for comparison');
+                return;
+            }
+
+            await runAnalysis([selectedFiles.file1, selectedFiles.file2], 'comparison');
+        }
+
+        async function runAnalysis(fileIds, mode) {
+            // Show loading state
+            const chartSection = document.getElementById('chart-section');
+            const chartTitle = document.getElementById('chart-title');
+            const errorEl = document.getElementById('chart-error');
+            errorEl.textContent = '';
+
+            chartTitle.textContent = mode === 'single' ? 'Результат анализа' : 'Результат сравнения';
+            chartSection.classList.remove('hidden');
+
+            try {
+                if (mode === 'single') {
+                    await analyzeFile(fileIds);
+                    await displayFileStats(fileIds);
+                } else {
+                    await compareFiles(fileIds);
+                    await displayComparisonStats(fileIds);
+                }
+            } catch (error) {
+                errorEl.textContent = 'Analysis failed: ' + error.message;
+            }
+        }
+
+        async function compareFiles(fileIds) {
+            const token = localStorage.getItem('token');
+            const [file1Id, file2Id] = fileIds;
+
+            try {
+                const [res1, res2] = await Promise.all([
+                    fetch(`/media/files/${file1Id}/analyze`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
+                    fetch(`/media/files/${file2Id}/analyze`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    })
+                ]);
+
+                const [data1, data2] = await Promise.all([res1.json(), res2.json()]);
+
+                if (!res1.ok || !res2.ok) {
+                    throw new Error(data1.detail || data2.detail || 'Analysis failed');
+                }
+
+                renderComparisonChart(
+                    data1.series,
+                    data2.series,
+                    await getFilename(file1Id),
+                    await getFilename(file2Id)
+                );
+            } catch (error) {
+                throw error;
+            }
+        }
+
+        async function getFilename(fileId) {
+            const token = localStorage.getItem('token');
+            const res = await fetch('/media/files', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            const file = data.files.find(f => f.id === fileId);
+            return file ? file.filename : `File ${fileId}`;
+        }
+
+        async function displayComparisonStats(fileIds) {
+            const token = localStorage.getItem('token');
+            const [file1Id, file2Id] = fileIds;
+
+            try {
+                const [res1, res2] = await Promise.all([
+                    fetch(`/media/files/${file1Id}/analyze`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
+                    fetch(`/media/files/${file2Id}/analyze`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    })
+                ]);
+
+                const [data1, data2] = await Promise.all([res1.json(), res2.json()]);
+
+                if (res1.ok && res2.ok) {
+                    const stats1 = calculateStats(data1.series);
+                    const stats2 = calculateStats(data2.series);
+                    const filename1 = await getFilename(file1Id);
+                    const filename2 = await getFilename(file2Id);
+
+                    // Calculate durations
+                    const times1 = data1.series.map(p => Number(p.t) || 0);
+                    const times2 = data2.series.map(p => Number(p.t) || 0);
+                    const duration1 = (Math.max(...times1) - Math.min(...times1)).toFixed(1);
+                    const duration2 = (Math.max(...times2) - Math.min(...times2)).toFixed(1);
+
+                    const statsEl = document.getElementById('stats-content');
+                    statsEl.innerHTML = `
+                        <div class="row" style="gap: 1rem; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 300px;">
+                                <h5>${filename1} (${duration1}s)</h5>
+                                ${formatStats(stats1)}
+                            </div>
+                            <div style="flex: 1; min-width: 300px;">
+                                <h5>${filename2} (${duration2}s)</h5>
+                                ${formatStats(stats2)}
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading comparison stats:', error);
+            }
+        }
+
+        function calculateStats(series) {
+            const values = series.map(p => Number(p.value) || 0);
+            const avg = values.reduce((a, b) => a + b, 0) / values.length;
+            const max = Math.max(...values);
+            const min = Math.min(...values);
+            const aboveThreshold = values.filter(v => v >= 0.7).length;
+            const engagementPercentage = (aboveThreshold / values.length * 100).toFixed(1);
+
+            return { avg, max, min, engagementPercentage, dataPoints: values.length };
+        }
+
+        function formatStats(stats) {
+            return `
+                <div style="padding: 0.5rem; background: #f5f5f5; border-radius: 4px; margin: 0.25rem 0;">
+                    <strong>Средняя вовлеченность:</strong> ${(stats.avg * 100).toFixed(1)}%
+                </div>
+                <div style="padding: 0.5rem; background: #f5f5f5; border-radius: 4px; margin: 0.25rem 0;">
+                    <strong>Пик вовлеченности:</strong> ${(stats.max * 100).toFixed(1)}%
+                </div>
+                <div style="padding: 0.5rem; background: #f5f5f5; border-radius: 4px; margin: 0.25rem 0;">
+                    <strong>Время при заинтересованности > 70%:</strong> ${stats.engagementPercentage}%
+                </div>
+<!--                <div style="padding: 0.5rem; background: #f5f5f5; border-radius: 4px; margin: 0.25rem 0;">-->
+<!--                    <strong>Data Points:</strong> ${stats.dataPoints}-->
+<!--                </div>-->
+            `;
+        }
+
+        async function displayFileStats(fileId) {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`/media/files/${fileId}/analyze`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                const statsEl = document.getElementById('stats-content');
+
+                if (data.series && data.series.length > 0) {
+                    const stats = calculateStats(data.series);
+                    statsEl.innerHTML = formatStats(stats);
+                }
+            }
+        }
     </script>
 </body>
 </html>

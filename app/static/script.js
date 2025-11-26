@@ -49,6 +49,7 @@ async function analyzeFile(id) {
             console.debug('analyze response', data);
             if (Array.isArray(data?.series)) {
                 // Tabular view in browser console
+                console.log(data.series)
                 console.table(data.series.map(p => ({ t: Number(p.t), value: Number(p.value) })));
                 // Summary
                 const vals = data.series.map(p => Number(p.value) || 0);
@@ -91,33 +92,19 @@ function renderChart(series) {
     const vMin = 0; // clamp 0..1 for engagement
     const vMax = 1;
 
-    // Resample into ~12 равных отрезков (0%..100%) — даст 13 точек
-    const bins = 12; // 0%, ~8.3%, ..., 100%
-    const pairs = times.map((t, i) => ({ t, v: values[i] })).sort((a,b)=>a.t-b.t);
-    const interp = (tt) => {
-        if (pairs.length === 0) return 0;
-        if (tt <= pairs[0].t) return pairs[0].v;
-        if (tt >= pairs[pairs.length - 1].t) return pairs[pairs.length - 1].v;
-        for (let j = 0; j < pairs.length - 1; j++) {
-            const a = pairs[j], b = pairs[j + 1];
-            if (tt >= a.t && tt <= b.t) {
-                const r = (tt - a.t) / Math.max(1e-9, (b.t - a.t));
-                return a.v + r * (b.v - a.v);
-            }
-        }
-        return pairs[pairs.length - 1].v;
-    };
-    const rTimes = [];
-    const rValues = [];
-    if (tMax === tMin) {
-        rTimes.push(tMin);
-        rValues.push(values[0] ?? 0);
+    // === НОВОЕ: решаем, какие индексы использовать для маркеров ===
+    const MAX_MARKERS = 200;
+    let markerIndices = [];
+    if (series.length <= MAX_MARKERS) {
+        markerIndices = Array.from({ length: series.length }, (_, i) => i);
     } else {
-        for (let b = 0; b <= bins; b++) {
-            const tt = tMin + (b / bins) * (tMax - tMin);
-            rTimes.push(tt);
-            rValues.push(interp(tt));
-        }
+        const step = (series.length - 1) / (MAX_MARKERS - 1);
+        markerIndices = Array.from({ length: MAX_MARKERS }, (_, i) => {
+            return Math.round(i * step);
+        });
+        // Убедимся, что первый и последний точно есть
+        markerIndices[0] = 0;
+        markerIndices[MAX_MARKERS - 1] = series.length - 1;
     }
 
     // Padding
@@ -136,8 +123,7 @@ function renderChart(series) {
         ctx.lineTo(w - padR, gy);
         ctx.stroke();
     }
-    // Vertical grid: adaptive count based on pixel width (denser time divisions)
-    // ~ one grid line every ~20px, clamped
+    // Vertical grid: adaptive count
     const segs = Math.max(16, Math.min(80, Math.round(plotW / 20)));
     for (let s = 0; s <= segs; s++) {
         const gx = padL + (s / segs) * plotW;
@@ -157,29 +143,20 @@ function renderChart(series) {
     ctx.lineTo(padL, h - padB);
     ctx.stroke();
 
-    // Ticks/labels (simple)
+    // Ticks/labels
     ctx.fillStyle = '#555';
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'center';
-    // Minor x-ticks at every resampled bin with small markers
-    ctx.strokeStyle = '#aaa';
-    for (let p = 0; p <= bins; p++) {
-        const xx = padL + (p / bins) * plotW;
-        ctx.beginPath();
-        ctx.moveTo(xx, h - padB);
-        ctx.lineTo(xx, h - padB + 4);
-        ctx.stroke();
-    }
-    // Dynamic labeling along X: минимум 10-12 подписей если хватает места
-    const approxLabelEveryPx = 60; // не чаще, чтобы не слипались
+    // Dynamic X labels
+    const approxLabelEveryPx = 60;
     const maxLabels = Math.max(3, Math.floor(plotW / approxLabelEveryPx));
-    const step = Math.max(1, Math.round(bins / Math.max(1, maxLabels)));
-    for (let p = 0; p <= bins; p++) {
-        if (p % step !== 0 && p !== bins) continue;
-        const xx = padL + (p / bins) * plotW;
-        const tt = tMin + (p / bins) * (tMax - tMin);
-        ctx.fillText(`${tt.toFixed(0)}s`, xx, h - 10);
+    const labelStep = Math.max(1, Math.floor(times.length / maxLabels));
+    for (let i = 0; i < times.length; i += labelStep) {
+        if (i !== 0 && i !== times.length - 1 && (i % labelStep) !== 0) continue;
+        const xx = padL + ((times[i] - tMin) / Math.max(1e-9, tMax - tMin)) * plotW;
+        ctx.fillText(`${times[i].toFixed(0)}s`, xx, h - 10);
     }
+    // Y labels
     ctx.textAlign = 'right';
     for (let g = 0; g <= 10; g += 2) {
         const label = `${g * 10}%`;
@@ -191,28 +168,28 @@ function renderChart(series) {
     const x = t => padL + ((t - tMin) / Math.max(1e-9, (tMax - tMin))) * plotW;
     const y = v => padT + (1 - (v - vMin) / Math.max(1e-9, (vMax - vMin))) * plotH;
 
-    // Primary line (green) over resampled points
+    // === РИСУЕМ ЛИНИЮ ПО ВСЕМ ТОЧКАМ ===
     ctx.strokeStyle = '#2a7';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    for (let i = 0; i < rTimes.length; i++) {
-        const px = x(rTimes[i]);
-        const py = y(rValues[i]);
+    for (let i = 0; i < times.length; i++) {
+        const px = x(times[i]);
+        const py = y(values[i]);
         if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
     ctx.stroke();
 
-    // Point markers
+    // === РИСУЕМ МАРКЕРЫ ТОЛЬКО НА ВЫБРАННЫХ ИНДЕКСАХ ===
     ctx.fillStyle = '#2a7';
-    for (let i = 0; i < rTimes.length; i++) {
-        const px = x(rTimes[i]);
-        const py = y(rValues[i]);
+    for (const i of markerIndices) {
+        const px = x(times[i]);
+        const py = y(values[i]);
         ctx.beginPath();
         ctx.arc(px, py, 3, 0, Math.PI * 2);
         ctx.fill();
     }
 
-    // Threshold line at 70% (red) — separates good vs bad time
+    // Threshold line at 70%
     const thr = 0.7;
     ctx.strokeStyle = '#e33';
     ctx.lineWidth = 1.5;
@@ -220,29 +197,28 @@ function renderChart(series) {
     ctx.moveTo(padL, y(thr));
     ctx.lineTo(w - padR, y(thr));
     ctx.stroke();
-    // Label for the threshold
     ctx.fillStyle = '#e33';
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText('70%', padL + 4, y(thr) - 6);
 
     // Last value tag
-    const lastX = x(rTimes[rTimes.length - 1]);
-    const lastY = y(rValues[rValues.length - 1]);
+    const lastX = x(times[times.length - 1]);
+    const lastY = y(values[values.length - 1]);
     ctx.fillStyle = '#000';
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(`${(rValues[rValues.length - 1] * 100).toFixed(1)}%`, Math.min(lastX + 6, w - 40), lastY - 6);
+    ctx.fillText(`${(values[values.length - 1] * 100).toFixed(1)}%`, Math.min(lastX + 6, w - 40), lastY - 6);
 
-    // Highlight max and min points with exact values
-    const maxVal = Math.max(...rValues);
-    const minVal = Math.min(...rValues);
-    const maxIdx = rValues.indexOf(maxVal);
-    const minIdx = rValues.indexOf(minVal);
+    // Highlight max and min
+    const maxVal = Math.max(...values);
+    const minVal = Math.min(...values);
+    const maxIdx = values.indexOf(maxVal);
+    const minIdx = values.indexOf(minVal);
+
     const drawLabel = (idx, color, offsetY) => {
-        const px = x(rTimes[idx]);
-        const py = y(rValues[idx]);
-        // emphasize point
+        const px = x(times[idx]);
+        const py = y(values[idx]);
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -253,10 +229,11 @@ function renderChart(series) {
         ctx.textAlign = 'center';
         const tx = Math.max(padL + 20, Math.min(px, w - padR - 20));
         const ty = Math.max(padT + 12, Math.min(py + offsetY, h - padB - 4));
-        ctx.fillText(`${(rValues[idx] * 100).toFixed(1)}%`, tx, ty);
+        ctx.fillText(`${(values[idx] * 100).toFixed(1)}%`, tx, ty);
     };
+
     if (maxIdx >= 0) drawLabel(maxIdx, '#e33', -10);
-    if (minIdx >= 0) drawLabel(minIdx, '#33c', 14);
+    if (minIdx >= 0 && minIdx !== maxIdx) drawLabel(minIdx, '#33c', 14);
 }
 
 // Load the current user's file list and render simple rows with a delete button.
@@ -272,8 +249,8 @@ async function loadUserFiles() {
         filesEl.innerHTML = data.files.map(f => `
             <div style="margin: 0.5rem 0; padding: 0.5rem; border: 1px solid #ccc; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                 <span>${f.filename} (${new Date(f.uploaded_at).toLocaleString()})</span>
-                <button onclick="analyzeFile(${f.id})">Analyze</button>
-                <button onclick="deleteFile(${f.id})">Delete</button>
+
+            <button onclick="deleteFile(${f.id})" style="margin-left: auto;">Удалить</button>
             </div>
         `).join('');
     } else {
@@ -422,4 +399,510 @@ async function deleteFile(id) {
         // Ignore body; refresh list regardless
         if (typeof loadUserFiles === 'function') loadUserFiles();
     } catch (e) {}
+}
+
+
+
+
+
+
+// New function for algorithm page to load files in a selectable list
+async function loadAlgorithmFiles() {
+    const token = localStorage.getItem('token');
+    const res = await fetch('/media/files', {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    const filesEl = document.getElementById('file-list');
+
+    if (res.ok && data.files.length > 0) {
+        filesEl.innerHTML = `
+            <p>Select a file to analyze:</p>
+            <div class="stack">
+                ${data.files.map(f => `
+                    <div class="file-item" style="padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;"
+                         onclick="selectFile(${f.id}, this)" data-filename="${f.filename}">
+                            ${f.filename}
+                            <small class="muted">(${new Date(f.uploaded_at).toLocaleString()})</small>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    } else {
+        filesEl.innerHTML = '<p>No files available. <a href="/upload">Upload some files first</a>.</p>';
+    }
+}
+
+
+
+function renderComparisonChart(series1, series2, label1 = 'File 1', label2 = 'File 2', commonDuration = null) {
+    const canvas = document.getElementById('engagement-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    if (!series1 || !series2 || series1.length === 0 || series2.length === 0) {
+        ctx.fillStyle = '#666';
+        ctx.font = '16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('No data available for comparison', w / 2, h / 2);
+        return;
+    }
+
+    // Сбор всех времён и значений
+    const allTimes = [];
+    const allValues = [];
+
+    [series1, series2].forEach(series => {
+        series.forEach(p => {
+            const t = Number(p.t) || 0;
+            const v = Number(p.value) || 0;
+            allTimes.push(t);
+            allValues.push(v);
+        });
+    });
+
+    const tMin = Math.min(...allTimes);
+    const tMax = Math.max(...allTimes);
+    const vMin = 0;
+    const vMax = 1;
+    const actualDuration = commonDuration || (tMax - tMin);
+
+    // Padding
+    const padL = 50, padR = 150, padT = 40, padB = 40;
+    const plotW = w - padL - padR;
+    const plotH = h - padT - padB;
+
+    // Grid and Axes
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 1;
+
+    for (let g = 0; g <= 10; g++) {
+        const gy = padT + (1 - g / 10) * plotH;
+        ctx.beginPath();
+        ctx.moveTo(padL, gy);
+        ctx.lineTo(w - padR, gy);
+        ctx.stroke();
+    }
+
+    const segs = 12;
+    for (let s = 0; s <= segs; s++) {
+        const gx = padL + (s / segs) * plotW;
+        ctx.beginPath();
+        ctx.moveTo(gx, padT);
+        ctx.lineTo(gx, h - padB);
+        ctx.stroke();
+    }
+
+    ctx.strokeStyle = '#888';
+    ctx.beginPath();
+    ctx.moveTo(padL, h - padB);
+    ctx.lineTo(w - padR, h - padB);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(padL, padT);
+    ctx.lineTo(padL, h - padB);
+    ctx.stroke();
+
+    // Labels
+    ctx.fillStyle = '#555';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+
+    for (let p = 0; p <= segs; p++) {
+        if (p % 2 === 0 || p === segs) {
+            const xx = padL + (p / segs) * plotW;
+            const timeValue = (p / segs) * actualDuration;
+            ctx.fillText(`${timeValue.toFixed(0)}s`, xx, h - 20);
+        }
+    }
+
+    ctx.textAlign = 'right';
+    for (let g = 0; g <= 10; g += 2) {
+        const label = `${g * 10}%`;
+        const gy = padT + (1 - g / 10) * plotH;
+        ctx.fillText(label, padL - 8, gy + 4);
+    }
+
+    // Scale helpers
+    const x = t => {
+        const relativeTime = t - tMin;
+        return padL + (relativeTime / Math.max(1e-9, actualDuration)) * plotW;
+    };
+    const y = v => padT + (1 - (v - vMin) / Math.max(1e-9, (vMax - vMin))) * plotH;
+
+    const colors = ['#2a7', '#e33'];
+    const labels = [label1, label2];
+    const MAX_MARKERS = 200; // ← так же, как в renderChart
+
+    [series1, series2].forEach((series, seriesIndex) => {
+        const color = colors[seriesIndex];
+        const times = series.map(p => Number(p.t) || 0);
+        const values = series.map(p => Number(p.value) || 0);
+
+        // === 1. Рисуем ЛИНИЮ по ВСЕМ точкам (без интерполяции) ===
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < times.length; i++) {
+            const px = x(times[i]);
+            const py = y(values[i]);
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // === 2. Выбираем индексы для маркеров — ТОЧНО КАК В renderChart ===
+        let markerIndices = [];
+        if (times.length <= MAX_MARKERS) {
+            markerIndices = Array.from({ length: times.length }, (_, i) => i);
+        } else {
+            const step = (times.length - 1) / (MAX_MARKERS - 1);
+            markerIndices = Array.from({ length: MAX_MARKERS }, (_, i) => {
+                return Math.round(i * step);
+            });
+            // Гарантируем, что первый и последний индексы есть
+            markerIndices[0] = 0;
+            markerIndices[MAX_MARKERS - 1] = times.length - 1;
+        }
+
+        // === 3. Рисуем маркеры только на выбранных индексах ===
+        ctx.fillStyle = color;
+        for (const i of markerIndices) {
+            const px = x(times[i]);
+            const py = y(values[i]);
+            ctx.beginPath();
+            ctx.arc(px, py, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    });
+
+    // Threshold line
+    const thr = 0.7;
+    ctx.strokeStyle = '#e33';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(padL, y(thr));
+    ctx.lineTo(w - padR, y(thr));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Threshold label
+    ctx.fillStyle = '#e33';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('70%', padL + 4, y(thr) - 6);
+
+    // Duration info
+    ctx.fillStyle = '#666';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Comparison duration: ${actualDuration.toFixed(1)}s`, padL, padT - 10);
+
+    // Legend
+    ctx.textAlign = 'left';
+    const legendX = w - padR + 10;
+    const legendY = padT + 20;
+    labels.forEach((label, index) => {
+        const color = colors[index];
+        ctx.fillStyle = color;
+        ctx.fillRect(legendX, legendY + index * 25, 20, 3);
+        ctx.fillStyle = '#000';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(label, legendX + 25, legendY + 5 + index * 25);
+    });
+}
+
+// Функция для интерполяции серии данных
+function interpolateSeries(originalSeries, targetPointCount) {
+    if (originalSeries.length <= 1) return originalSeries;
+
+    const result = [];
+    const times = originalSeries.map(p => p.t);
+    const values = originalSeries.map(p => p.v);
+
+    const minTime = Math.min(...times);
+    const maxTime = Math.max(...times);
+
+    for (let i = 0; i < targetPointCount; i++) {
+        const progress = i / (targetPointCount - 1);
+        const targetTime = minTime + progress * (maxTime - minTime);
+
+        // Находим ближайшие точки для интерполяции
+        let leftIndex = 0;
+        let rightIndex = originalSeries.length - 1;
+
+        for (let j = 0; j < originalSeries.length - 1; j++) {
+            if (originalSeries[j].t <= targetTime && originalSeries[j + 1].t >= targetTime) {
+                leftIndex = j;
+                rightIndex = j + 1;
+                break;
+            }
+        }
+
+        const leftPoint = originalSeries[leftIndex];
+        const rightPoint = originalSeries[rightIndex];
+
+        let interpolatedValue;
+        if (leftPoint.t === rightPoint.t) {
+            interpolatedValue = leftPoint.v;
+        } else {
+            const ratio = (targetTime - leftPoint.t) / (rightPoint.t - leftPoint.t);
+            interpolatedValue = leftPoint.v + ratio * (rightPoint.v - leftPoint.v);
+        }
+
+        result.push({ t: targetTime, v: interpolatedValue });
+    }
+
+    return result;
+}
+
+
+
+// Function to render comparison chart with two datasets
+function renderComparisonChart(series1, series2, label1 = 'File 1', label2 = 'File 2') {
+
+    const canvas = document.getElementById('engagement-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // Clear
+    ctx.clearRect(0, 0, w, h);
+
+    if (!series1 || !series2 || series1.length === 0 || series2.length === 0) {
+        ctx.fillStyle = '#666';
+        ctx.font = '16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Нет данных для сравнения', w / 2, h / 2);
+        return;
+    }
+
+    // Calculate individual time ranges
+    const times1 = series1.map(p => Number(p.t) || 0);
+    const times2 = series2.map(p => Number(p.t) || 0);
+
+    const tMin1 = Math.min(...times1);
+    const tMax1 = Math.max(...times1);
+    const tMin2 = Math.min(...times2);
+    const tMax2 = Math.max(...times2);
+
+    // Use the maximum duration from both files
+    const globalTMin = 0;
+    const globalTMax = Math.max(tMax1 - tMin1, tMax2 - tMin2);
+    const globalDuration = globalTMax;
+
+    const vMin = 0;
+    const vMax = 1;
+
+    // Padding
+    const padL = 50, padR = 150, padT = 40, padB = 40;
+    const plotW = w - padL - padR;
+    const plotH = h - padT - padB;
+
+    // Grid and Axes
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 1;
+
+    // Horizontal grid
+    for (let g = 0; g <= 10; g++) {
+        const gy = padT + (1 - g / 10) * plotH;
+        ctx.beginPath();
+        ctx.moveTo(padL, gy);
+        ctx.lineTo(w - padR, gy);
+        ctx.stroke();
+    }
+
+    // Vertical grid
+    const segs = 12;
+    for (let s = 0; s <= segs; s++) {
+        const gx = padL + (s / segs) * plotW;
+        ctx.beginPath();
+        ctx.moveTo(gx, padT);
+        ctx.lineTo(gx, h - padB);
+        ctx.stroke();
+    }
+
+    // Axes
+    ctx.strokeStyle = '#888';
+    ctx.beginPath();
+    ctx.moveTo(padL, h - padB);
+    ctx.lineTo(w - padR, h - padB);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(padL, padT);
+    ctx.lineTo(padL, h - padB);
+    ctx.stroke();
+
+    // Labels
+    ctx.fillStyle = '#555';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+
+    // X-axis labels - relative time from 0 to max duration
+    for (let p = 0; p <= segs; p++) {
+        if (p % 2 === 0 || p === segs) {
+            const xx = padL + (p / segs) * plotW;
+            const timeValue = (p / segs) * globalDuration;
+            ctx.fillText(`${timeValue.toFixed(0)}s`, xx, h - 20);
+        }
+    }
+
+    // Y-axis labels
+    ctx.textAlign = 'right';
+    for (let g = 0; g <= 10; g += 2) {
+        const label = `${g * 10}%`;
+        const gy = padT + (1 - g / 10) * plotH;
+        ctx.fillText(label, padL - 8, gy + 4);
+    }
+
+    // Scale helpers - use relative time starting from 0
+    const x = t => {
+        return padL + (t / Math.max(1e-9, globalDuration)) * plotW;
+    };
+    const y = v => padT + (1 - (v - vMin) / Math.max(1e-9, (vMax - vMin))) * plotH;
+
+    // Colors for the two series
+    const colors = ['#2a7', '#e33'];
+    const labels = [label1, label2];
+
+    // Draw both series with their own time ranges
+    [series1, series2].forEach((series, seriesIndex) => {
+        const color = colors[seriesIndex];
+        const times = series.map(p => Number(p.t) || 0);
+        const values = series.map(p => Number(p.value) || 0);
+
+        // Shift times to start from 0 for this series
+        const seriesMinTime = seriesIndex === 0 ? tMin1 : tMin2;
+        const shiftedTimes = times.map(t => t - seriesMinTime);
+
+        // Sort points by time
+        const pairs = shiftedTimes.map((t, i) => ({ t, v: values[i] })).sort((a,b) => a.t - b.t);
+
+        // If too few points, interpolate for smooth chart
+        let pointsToDraw = pairs;
+        console.log(pairs.length);
+        if (pairs.length < 20 && pairs.length > 1) {
+            pointsToDraw = interpolateSeries(pairs, 20);
+        }
+
+        // Draw line
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        let hasPoints = false;
+        for (let i = 0; i < pointsToDraw.length; i++) {
+            const px = x(pointsToDraw[i].t);
+            const py = y(pointsToDraw[i].v);
+            if (i === 0) {
+                ctx.moveTo(px, py);
+                hasPoints = true;
+            } else {
+                ctx.lineTo(px, py);
+            }
+        }
+        if (hasPoints) {
+            ctx.stroke();
+        }
+
+        // Draw points - only for original points
+        ctx.fillStyle = color;
+        for (let i = 0; i < pairs.length; i++) {
+            // Show every Nth point to avoid clutter
+//            if (i % Math.max(1, Math.floor(pairs.length / 10)) === 0 || i === pairs.length - 1) {
+                const px = x(pairs[i].t);
+                const py = y(pairs[i].v);
+                ctx.beginPath();
+                ctx.arc(px, py, 3, 0, Math.PI * 2);
+                ctx.fill();
+//            }
+        }
+    });
+
+    // Threshold line
+    const thr = 0.7;
+    ctx.strokeStyle = '#e33';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(padL, y(thr));
+    ctx.lineTo(w - padR, y(thr));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Threshold label
+    ctx.fillStyle = '#e33';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('70%', padL + 4, y(thr) - 6);
+
+    // File duration information
+    ctx.fillStyle = '#666';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Time range: 0 - ${globalDuration.toFixed(0)}s`, padL, padT - 10);
+
+    // Legend with duration information
+    ctx.textAlign = 'left';
+    const legendX = w - padR + 10;
+    const legendY = padT + 20;
+
+    labels.forEach((label, index) => {
+        const color = colors[index];
+        const duration = (index === 0 ? tMax1 - tMin1 : tMax2 - tMin2).toFixed(1);
+
+        ctx.fillStyle = color;
+        ctx.fillRect(legendX, legendY + index * 25, 20, 3);
+        ctx.fillStyle = '#000';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(`${label} (${duration}s)`, legendX + 25, legendY + 5 + index * 25);
+    });
+}
+
+// Function for interpolation of series data
+function interpolateSeries(originalSeries, targetPointCount) {
+    if (originalSeries.length <= 1) return originalSeries;
+
+    const result = [];
+    const times = originalSeries.map(p => p.t);
+    const values = originalSeries.map(p => p.v);
+
+    const minTime = Math.min(...times);
+    const maxTime = Math.max(...times);
+
+    for (let i = 0; i < targetPointCount; i++) {
+        const progress = i / (targetPointCount - 1);
+        const targetTime = minTime + progress * (maxTime - minTime);
+
+        // Find nearest points for interpolation
+        let leftIndex = 0;
+        let rightIndex = originalSeries.length - 1;
+
+        for (let j = 0; j < originalSeries.length - 1; j++) {
+            if (originalSeries[j].t <= targetTime && originalSeries[j + 1].t >= targetTime) {
+                leftIndex = j;
+                rightIndex = j + 1;
+                break;
+            }
+        }
+
+        const leftPoint = originalSeries[leftIndex];
+        const rightPoint = originalSeries[rightIndex];
+
+        let interpolatedValue;
+        if (leftPoint.t === rightPoint.t) {
+            interpolatedValue = leftPoint.v;
+        } else {
+            const ratio = (targetTime - leftPoint.t) / (rightPoint.t - leftPoint.t);
+            interpolatedValue = leftPoint.v + ratio * (rightPoint.v - leftPoint.v);
+        }
+
+        result.push({ t: targetTime, v: interpolatedValue });
+    }
+
+    return result;
 }
