@@ -1,11 +1,11 @@
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException
+import requests
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import FileResponse
 from jose import jwt
 from app.db import SessionLocal, MediaFile, User, MediaAnalysis
 import os
 from pathlib import Path
-from app.alg.engine import analyze_file
 import logging
 logging.basicConfig(
     level=logging.INFO,  # или DEBUG, если нужно ещё детальнее
@@ -148,8 +148,34 @@ async def analyze_media_file(file_id: int, user: str = Depends(get_current_user)
         if not filepath.exists():
             raise HTTPException(status_code=404, detail="Stored file is missing")
 
+        filename = os.path.basename(filepath)
+        logging.info(filename)
+        logging.info(user_obj.audio_sample_path)
         #result = analyze_file(file.filepath)
+        url = "http://localhost:5000/process" # или localhost / host.docker.internal
+        speakerGOVORITTTT = os.path.basename(user_obj.audio_sample_path)
+        logging.info(speakerGOVORITTTT)
+        payload = {
+            "video_path": "/shared/"+filename,
+            "sample_path": "/shared/"+speakerGOVORITTTT
+        }
+
+        try:
+            response = requests.post(url, json=payload, timeout=60)
+            output_list = {"series": [
+                {"t": float(t_str), "value": float(value)}  # или int(value), если всегда целые
+                for t_str, value in response.json().items()
+            ]}
+            response.raise_for_status()
+            logging.info(output_list)
+            print(output_list)
+            print(output_list)
+            return output_list
+        except requests.RequestException as e:
+            raise HTTPException(status_code=500, detail=f"Ошибка при вызове main-service: {str(e)}")
         result = None # заменить
+
+        logging.info("")
         if not isinstance(result, dict) or "series" not in result:
             logging.warning("analyze_file returned invalid result for file_id=%s", file_id)
             raise HTTPException(status_code=500, detail="Invalid analysis result")
@@ -162,6 +188,7 @@ async def analyze_media_file(file_id: int, user: str = Depends(get_current_user)
             file_id=file_id,
             series=series
         )
+
         db.add(new_analysis)
         db.commit()
         db.refresh(new_analysis)

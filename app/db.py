@@ -19,7 +19,9 @@ class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
+    audio_sample_path = Column(String, nullable=True)
     hashed_password = Column(String)
+
 
 class MediaFile(Base):
     __tablename__ = "media_files"

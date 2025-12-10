@@ -72,170 +72,167 @@ async function analyzeFile(id) {
 }
 
 // Render a simple line chart of value over time on a canvas with id "engagement-chart".
-function renderChart(series) {
-    const canvas = document.getElementById('engagement-chart');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
+function renderChart(series, label = 'File 1') {
+  const canvas = document.getElementById('engagement-chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
 
-    // Clear
-    ctx.clearRect(0, 0, w, h);
+  ctx.clearRect(0, 0, w, h);
 
-    if (!series || series.length === 0) return;
-
-    // Compute bounds on raw data
-    const times = series.map(p => Number(p.t) || 0);
-    const values = series.map(p => Number(p.value) || 0);
-    const tMin = Math.min(...times);
-    const tMax = Math.max(...times);
-    const vMin = 0; // clamp 0..1 for engagement
-    const vMax = 1;
-
-    // === НОВОЕ: решаем, какие индексы использовать для маркеров ===
-    const MAX_MARKERS = 200;
-    let markerIndices = [];
-    if (series.length <= MAX_MARKERS) {
-        markerIndices = Array.from({ length: series.length }, (_, i) => i);
-    } else {
-        const step = (series.length - 1) / (MAX_MARKERS - 1);
-        markerIndices = Array.from({ length: MAX_MARKERS }, (_, i) => {
-            return Math.round(i * step);
-        });
-        // Убедимся, что первый и последний точно есть
-        markerIndices[0] = 0;
-        markerIndices[MAX_MARKERS - 1] = series.length - 1;
-    }
-
-    // Padding
-    const padL = 40, padR = 10, padT = 10, padB = 30;
-    const plotW = w - padL - padR;
-    const plotH = h - padT - padB;
-
-    // Grid and Axes
-    ctx.strokeStyle = '#ddd';
-    ctx.lineWidth = 1;
-    // Horizontal grid every 10%
-    for (let g = 0; g <= 10; g++) {
-        const gy = padT + (1 - g / 10) * plotH;
-        ctx.beginPath();
-        ctx.moveTo(padL, gy);
-        ctx.lineTo(w - padR, gy);
-        ctx.stroke();
-    }
-    // Vertical grid: adaptive count
-    const segs = Math.max(16, Math.min(80, Math.round(plotW / 20)));
-    for (let s = 0; s <= segs; s++) {
-        const gx = padL + (s / segs) * plotW;
-        ctx.beginPath();
-        ctx.moveTo(gx, padT);
-        ctx.lineTo(gx, h - padB);
-        ctx.stroke();
-    }
-    // Axes lines
-    ctx.strokeStyle = '#888';
-    ctx.beginPath();
-    ctx.moveTo(padL, h - padB);
-    ctx.lineTo(w - padR, h - padB);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(padL, padT);
-    ctx.lineTo(padL, h - padB);
-    ctx.stroke();
-
-    // Ticks/labels
-    ctx.fillStyle = '#555';
-    ctx.font = '12px sans-serif';
+  if (!series || series.length === 0) {
+    ctx.fillStyle = '#666';
+    ctx.font = '16px sans-serif';
     ctx.textAlign = 'center';
-    // Dynamic X labels
-    const approxLabelEveryPx = 60;
-    const maxLabels = Math.max(3, Math.floor(plotW / approxLabelEveryPx));
-    const labelStep = Math.max(1, Math.floor(times.length / maxLabels));
-    for (let i = 0; i < times.length; i += labelStep) {
-        if (i !== 0 && i !== times.length - 1 && (i % labelStep) !== 0) continue;
-        const xx = padL + ((times[i] - tMin) / Math.max(1e-9, tMax - tMin)) * plotW;
-        ctx.fillText(`${times[i].toFixed(0)}s`, xx, h - 10);
-    }
-    // Y labels
-    ctx.textAlign = 'right';
-    for (let g = 0; g <= 10; g += 2) {
-        const label = `${g * 10}%`;
-        const gy = padT + (1 - g / 10) * plotH;
-        ctx.fillText(label, padL - 6, gy + 4);
-    }
+    ctx.fillText('No data available', w / 2, h / 2);
+    return;
+  }
 
-    // Scale helpers
-    const x = t => padL + ((t - tMin) / Math.max(1e-9, (tMax - tMin))) * plotW;
-    const y = v => padT + (1 - (v - vMin) / Math.max(1e-9, (vMax - vMin))) * plotH;
+  // Сбор времён и значений
+  const times = series.map(p => Number(p.t) || 0);
+  const values = series.map(p => Number(p.value) || 0);
+  const tMin = Math.min(...times);
+  const tMax = Math.max(...times);
+  const vMin = 0;
+  const vMax = 1;
+  const actualDuration = tMax - tMin;
 
-    // === РИСУЕМ ЛИНИЮ ПО ВСЕМ ТОЧКАМ ===
-    ctx.strokeStyle = '#2a7';
-    ctx.lineWidth = 2;
+  // Padding — как в renderComparisonChart
+  const padL = 50, padR = 150, padT = 40, padB = 40;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+
+  // Сетка — как в сравнении
+  ctx.strokeStyle = '#ddd';
+  ctx.lineWidth = 1;
+
+  // Горизонтальная сетка (0%–100% по шагам 10%)
+  for (let g = 0; g <= 10; g++) {
+    const gy = padT + (1 - g / 10) * plotH;
     ctx.beginPath();
-    for (let i = 0; i < times.length; i++) {
-        const px = x(times[i]);
-        const py = y(values[i]);
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-    }
+    ctx.moveTo(padL, gy);
+    ctx.lineTo(w - padR, gy);
     ctx.stroke();
+  }
 
-    // === РИСУЕМ МАРКЕРЫ ТОЛЬКО НА ВЫБРАННЫХ ИНДЕКСАХ ===
-    ctx.fillStyle = '#2a7';
-    for (const i of markerIndices) {
-        const px = x(times[i]);
-        const py = y(values[i]);
-        ctx.beginPath();
-        ctx.arc(px, py, 3, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    // Threshold line at 70%
-    const thr = 0.7;
-    ctx.strokeStyle = '#e33';
-    ctx.lineWidth = 1.5;
+  // Вертикальная сетка — 12 сегментов
+  const segs = 12;
+  for (let s = 0; s <= segs; s++) {
+    const gx = padL + (s / segs) * plotW;
     ctx.beginPath();
-    ctx.moveTo(padL, y(thr));
-    ctx.lineTo(w - padR, y(thr));
+    ctx.moveTo(gx, padT);
+    ctx.lineTo(gx, h - padB);
     ctx.stroke();
-    ctx.fillStyle = '#e33';
-    ctx.font = '12px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('70%', padL + 4, y(thr) - 6);
+  }
 
-    // Last value tag
-    const lastX = x(times[times.length - 1]);
-    const lastY = y(values[values.length - 1]);
-    ctx.fillStyle = '#000';
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(`${(values[values.length - 1] * 100).toFixed(1)}%`, Math.min(lastX + 6, w - 40), lastY - 6);
+  // Оси
+  ctx.strokeStyle = '#888';
+  ctx.beginPath();
+  ctx.moveTo(padL, h - padB);
+  ctx.lineTo(w - padR, h - padB);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(padL, padT);
+  ctx.lineTo(padL, h - padB);
+  ctx.stroke();
 
-    // Highlight max and min
-    const maxVal = Math.max(...values);
-    const minVal = Math.min(...values);
-    const maxIdx = values.indexOf(maxVal);
-    const minIdx = values.indexOf(minVal);
+  // Подписи осей
+  ctx.fillStyle = '#555';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
 
-    const drawLabel = (idx, color, offsetY) => {
-        const px = x(times[idx]);
-        const py = y(values[idx]);
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(px, py, 4, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.fillStyle = color;
-        ctx.font = '12px sans-serif';
-        ctx.textAlign = 'center';
-        const tx = Math.max(padL + 20, Math.min(px, w - padR - 20));
-        const ty = Math.max(padT + 12, Math.min(py + offsetY, h - padB - 4));
-        ctx.fillText(`${(values[idx] * 100).toFixed(1)}%`, tx, ty);
-    };
+  // X-метки: каждые (actualDuration / 12) секунд
+  for (let p = 0; p <= segs; p++) {
+    if (p % 2 === 0 || p === segs) {
+      const xx = padL + (p / segs) * plotW;
+      const timeValue = (p / segs) * actualDuration;
+      ctx.fillText(`${timeValue.toFixed(0)}s`, xx, h - 20);
+    }
+  }
 
-    if (maxIdx >= 0) drawLabel(maxIdx, '#e33', -10);
-    if (minIdx >= 0 && minIdx !== maxIdx) drawLabel(minIdx, '#33c', 14);
+  // Y-метки: 0%, 20%, ..., 100%
+  ctx.textAlign = 'right';
+  for (let g = 0; g <= 10; g += 2) {
+    const labelY = `${g * 10}%`;
+    const gy = padT + (1 - g / 10) * plotH;
+    ctx.fillText(labelY, padL - 8, gy + 4);
+  }
+
+  // Масштабные функции — как в сравнении
+  const x = t => {
+    const relativeTime = t - tMin;
+    return padL + (relativeTime / Math.max(1e-9, actualDuration)) * plotW;
+  };
+  const y = v => padT + (1 - (v - vMin) / Math.max(1e-9, (vMax - vMin))) * plotH;
+
+  // === Рисуем линию по ВСЕМ точкам ===
+  const color = '#2a7';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < times.length; i++) {
+    const px = x(times[i]);
+    const py = y(values[i]);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // === Маркеры: не более MAX_MARKERS ===
+  const MAX_MARKERS = 200;
+  let markerIndices = [];
+  if (times.length <= MAX_MARKERS) {
+    markerIndices = Array.from({ length: times.length }, (_, i) => i);
+  } else {
+    const step = (times.length - 1) / (MAX_MARKERS - 1);
+    markerIndices = Array.from({ length: MAX_MARKERS }, (_, i) => Math.round(i * step));
+    markerIndices[0] = 0;
+    markerIndices[MAX_MARKERS - 1] = times.length - 1;
+  }
+
+  ctx.fillStyle = color;
+  for (const i of markerIndices) {
+    const px = x(times[i]);
+    const py = y(values[i]);
+    ctx.beginPath();
+//    ctx.arc(px, py, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Порог 70% — пунктир
+  const thr = 0.7;
+  ctx.strokeStyle = '#e33';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(padL, y(thr));
+  ctx.lineTo(w - padR, y(thr));
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Подпись порога
+  ctx.fillStyle = '#e33';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('70%', padL + 4, y(thr) - 6);
+
+  // Информация о длительности
+  ctx.fillStyle = '#666';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`Duration: ${actualDuration.toFixed(1)}s`, padL, padT - 10);
+
+  // Легенда (как в сравнении, но один элемент)
+  ctx.textAlign = 'left';
+  const legendX = w - padR + 10;
+  const legendY = padT + 20;
+  ctx.fillStyle = color;
+  ctx.fillRect(legendX, legendY, 20, 3);
+  ctx.fillStyle = '#000';
+  ctx.font = '12px sans-serif';
+  ctx.fillText(label, legendX + 25, legendY + 5);
 }
-
 // Load the current user's file list and render simple rows with a delete button.
 // This function is called after a successful upload and on page load.
 async function loadUserFiles() {
@@ -574,7 +571,7 @@ function renderComparisonChart(series1, series2, label1 = 'File 1', label2 = 'Fi
             const px = x(times[i]);
             const py = y(values[i]);
             ctx.beginPath();
-            ctx.arc(px, py, 3, 0, Math.PI * 2);
+//            ctx.arc(px, py, 3, 0, Math.PI * 2);
             ctx.fill();
         }
     });
@@ -817,7 +814,7 @@ function renderComparisonChart(series1, series2, label1 = 'File 1', label2 = 'Fi
                 const px = x(pairs[i].t);
                 const py = y(pairs[i].v);
                 ctx.beginPath();
-                ctx.arc(px, py, 3, 0, Math.PI * 2);
+//                ctx.arc(px, py, 3, 0, Math.PI * 2);
                 ctx.fill();
 //            }
         }
