@@ -148,8 +148,8 @@ async def analyze_media_file(file_id: int, user: str = Depends(get_current_user)
         if not filepath.exists():
             raise HTTPException(status_code=404, detail="Stored file is missing")
 
-        result = analyze_file(file.filepath)
-
+        #result = analyze_file(file.filepath)
+        result = None # заменить
         if not isinstance(result, dict) or "series" not in result:
             logging.warning("analyze_file returned invalid result for file_id=%s", file_id)
             raise HTTPException(status_code=500, detail="Invalid analysis result")

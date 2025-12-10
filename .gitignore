@@ -1,8 +1,40 @@
-**/__pycache__/ 
-*.pyc 
-.venv/ 
-.env 
-venv/ 
-.idea/ 
+# dll files
+pyache/
+*.py[cod]
+*$py.class
+
+# packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# env
+.env
+.venv
+env/
+venv/
 uploads/
-.uploads/
+# docker
+.dockerignore
+
+# os
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
