@@ -1,0 +1,31 @@
+services:
+  audio-service:
+    build: ./audio-service
+    container_name: audio_processing
+    ports:
+      - "5001:5000"
+    volumes:
+      - /home/rain/classmood_app/uploads:/shared
+
+  video-service:
+    build: ./video-service
+    container_name: video_processing
+    ports:
+      - "5002:5000"
+    volumes:
+      - /home/rain/classmood_app/uploads:/shared
+      - ./models:/app/models
+
+  main-service:
+    build: ./main-service
+    container_name: main_processing
+    ports:
+      - "5000:5000"
+    volumes:
+      - /home/rain/classmood_app/uploads:/shared
+    depends_on:
+      - audio-service
+      - video-service
+    environment:
+      - VIDEO_PROCESSING_URL=http://video-service:5000/process_video
+      - AUDIO_PROCESSING_URL=http://audio-service:5000/process_audio

@@ -28,13 +28,22 @@
               <button class="outline" onclick="logout()">Выйти</button>
           </div>
       </div>
-
+<!-- Audio upload section -->
+    <div id="audio-upload-section" class="section stack">
+      <h3>Загрузить аудиофайл (.wav)</h3>
+      <div class="row" style="align-items:center; gap: 0.5rem;">
+        <input type="file" accept="audio/wav" id="audioFileInput" />
+        <button onclick="uploadAudio()">Загрузить аудио</button>
+      </div>
+      <div id="audio-upload-result" class="muted"></div>
+    </div>
     <!-- Upload section: choose files and send to the backend. -->
     <div id="upload-section" class="section stack">
         <div class="row" style="align-items:center;">
             <input type="file" accept="video/*" id="fileInput" multiple />
             <button onclick="upload()">Загрузить</button>
         </div>
+
 
         <!-- Your file list loads dynamically via loadUserFiles() in script.js -->
         <h3>Ваши файлы</h3>

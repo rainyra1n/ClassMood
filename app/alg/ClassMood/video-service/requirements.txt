@@ -1,0 +1,7 @@
+Flask==2.3.3
+opencv-python==4.11.0.86
+torch==2.9.1
+mediapipe==0.10.21
+ultralytics==8.3.215
+numpy==1.26.4
+pathlib

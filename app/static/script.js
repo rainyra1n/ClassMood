@@ -30,6 +30,62 @@ async function upload() {
     }
 }
 
+
+
+
+
+async function uploadAudio() {
+  const fileInput = document.getElementById('audioFileInput');
+  const file = fileInput.files[0];
+  const resultEl = document.getElementById('audio-upload-result');
+
+  if (!file) {
+    resultEl.innerHTML = '<p style="color: red;">Выберите аудиофайл (.wav)</p>';
+    return;
+  }
+
+  // Дополнительная проверка на .wav (опционально, но рекомендуется)
+  if (!file.name.toLowerCase().endsWith('.wav')) {
+    resultEl.innerHTML = '<p style="color: red;">Поддерживаются только файлы с расширением .wav</p>';
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file); // Обрати внимание: 'file', а не 'files'
+
+  const token = localStorage.getItem('token');
+  if (!token) {
+    resultEl.innerHTML = '<p style="color: red;">Токен отсутствует. Авторизуйтесь заново.</p>';
+    return;
+  }
+
+  try {
+    const res = await fetch('/media/upload-audio', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      resultEl.innerHTML = `<p style="color: green;">Аудиофайл загружен: ${data.filename || 'без имени'}</p>`;
+      // Опционально: сбросить поле ввода
+      fileInput.value = '';
+      // Опционально: обновить список файлов
+      if (typeof loadUserFiles === 'function') loadUserFiles();
+    } else {
+      resultEl.innerHTML = `<p style="color: red;">Ошибка: ${data.detail || 'Неизвестная ошибка'}</p>`;
+    }
+  } catch (err) {
+    resultEl.innerHTML = `<p style="color: red;">Ошибка сети: ${err.message}</p>`;
+  }
+}
+
+
+
+
+
 // Analyze a selected file and render the engagement chart below.
 async function analyzeFile(id) {
     const token = localStorage.getItem('token');

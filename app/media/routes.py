@@ -63,6 +63,35 @@ async def upload(
     finally:
         db.close()
 
+
+
+@router.post("/upload-audio")
+async def upload(
+        file: UploadFile = File,
+        user: str = Depends(get_current_user)
+):
+    db = SessionLocal()
+    try:
+        # Verify the user exists
+        user_obj = db.query(User).filter(User.username == user).first()
+        if not user_obj:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        results = []
+        safe_filename = f"{user_obj.id}_{file.filename}"
+        filepath = UPLOAD_DIR / safe_filename
+        with open(filepath, "wb") as f:
+             f.write(file.file.read())
+        user_obj.audio_sample_path = str(filepath)
+        db.commit()
+        results.append({"filename": file.filename, "path": str(filepath)})
+
+        return {"user": user, "results": results}
+    finally:
+        db.close()
+
+
+
 @router.get("/files")
 async def get_user_files(user: str = Depends(get_current_user)):
     db = SessionLocal()
@@ -173,44 +202,44 @@ async def analyze_media_file(file_id: int, user: str = Depends(get_current_user)
             return output_list
         except requests.RequestException as e:
             raise HTTPException(status_code=500, detail=f"Ошибка при вызове main-service: {str(e)}")
-        result = None # заменить
-
-        logging.info("")
-        if not isinstance(result, dict) or "series" not in result:
-            logging.warning("analyze_file returned invalid result for file_id=%s", file_id)
-            raise HTTPException(status_code=500, detail="Invalid analysis result")
-
-        series = result["series"]
-        if not isinstance(series, list):
-            raise HTTPException(status_code=500, detail="Series must be a list")
-
-        new_analysis = MediaAnalysis(
-            file_id=file_id,
-            series=series
-        )
-
-        db.add(new_analysis)
-        db.commit()
-        db.refresh(new_analysis)
-
-        try:
-            if series:
-                vals = [float(p.get("value", 0.0)) for p in series]
-                times = [float(p.get("t", 0.0)) for p in series]
-                avg = sum(vals) / len(vals)
-                vmin, vmax = min(vals), max(vals)
-                tmin, tmax = min(times), max(times)
-                logging.info(
-                    "Analyzed & cached file_id=%s len=%d avg=%.4f min=%.4f max=%.4f t=[%.3f..%.3f]",
-                    file_id, len(series), avg, vmin, vmax, tmin, tmax
-                )
-                logging.info("Sample points: %s", series[:5])
-            else:
-                logging.warning("Empty series for file_id=%s", file_id)
-        except Exception as e:
-            logging.exception("Failed to log analysis stats: %s", e)
-
-        return result
+        # result = None # заменить
+        #
+        # logging.info("")
+        # if not isinstance(result, dict) or "series" not in result:
+        #     logging.warning("analyze_file returned invalid result for file_id=%s", file_id)
+        #     raise HTTPException(status_code=500, detail="Invalid analysis result")
+        #
+        # series = result["series"]
+        # if not isinstance(series, list):
+        #     raise HTTPException(status_code=500, detail="Series must be a list")
+        #
+        # new_analysis = MediaAnalysis(
+        #     file_id=file_id,
+        #     series=series
+        # )
+        #
+        # db.add(new_analysis)
+        # db.commit()
+        # db.refresh(new_analysis)
+        #
+        # try:
+        #     if series:
+        #         vals = [float(p.get("value", 0.0)) for p in series]
+        #         times = [float(p.get("t", 0.0)) for p in series]
+        #         avg = sum(vals) / len(vals)
+        #         vmin, vmax = min(vals), max(vals)
+        #         tmin, tmax = min(times), max(times)
+        #         logging.info(
+        #             "Analyzed & cached file_id=%s len=%d avg=%.4f min=%.4f max=%.4f t=[%.3f..%.3f]",
+        #             file_id, len(series), avg, vmin, vmax, tmin, tmax
+        #         )
+        #         logging.info("Sample points: %s", series[:5])
+        #     else:
+        #         logging.warning("Empty series for file_id=%s", file_id)
+        # except Exception as e:
+        #     logging.exception("Failed to log analysis stats: %s", e)
+        #
+        # return result
 
     except HTTPException:
         db.rollback()
